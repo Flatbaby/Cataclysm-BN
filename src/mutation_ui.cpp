@@ -3,7 +3,9 @@
 #include <algorithm> //std::min
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <unordered_map>
+#include <vector>
 
 #include "character.h"
 #include "enums.h"
@@ -48,17 +50,20 @@ enum class mutation_tab_mode {
 };
 // needs extensive improvement
 
-static trait_id GetTrait( std::vector<trait_id> active, std::vector<trait_id> passive, int cursor,
-                          mutation_tab_mode tab_mode )
+namespace
 {
-    trait_id mut_id;
-    if( tab_mode == mutation_tab_mode::active ) {
-        mut_id = active[cursor];
-    } else {
-        mut_id = passive[cursor];
+
+auto get_trait( const std::vector<trait_id> &active, const std::vector<trait_id> &passive,
+                const int cursor, const mutation_tab_mode tab_mode ) -> std::optional<trait_id>
+{
+    const auto &list = tab_mode == mutation_tab_mode::active ? active : passive;
+    if( cursor < 0 || cursor >= static_cast<int>( list.size() ) ) {
+        return std::nullopt;
     }
-    return mut_id;
+    return list[cursor];
 }
+
+} // namespace
 
 static void show_mutations_titlebar( const catacurses::window &window,
                                      const mutation_menu_mode menu_mode, const input_context &ctxt )
@@ -350,9 +355,14 @@ detail::mutations_ui_result detail::show_mutations_ui_internal( Character &who )
         wnoutrefresh( wBio );
         show_mutations_titlebar( w_title, menu_mode, ctxt );
 
-        if( menu_mode == mutation_menu_mode::examining && examine_id.has_value() ) {
+        if( menu_mode == mutation_menu_mode::examining ) {
+            const auto shown = examine_id ? examine_id
+                               : get_trait( active, passive, cursor, tab_mode );
             werase( w_description );
-            fold_and_print( w_description, point_zero, WIDTH - 2, c_light_blue, examine_id.value()->desc() );
+            if( shown ) {
+                fold_and_print( w_description, point_zero, WIDTH - 2, c_light_blue,
+                                ( *shown )->desc() );
+            }
             wnoutrefresh( w_description );
         }
     } );
@@ -489,8 +499,7 @@ detail::mutations_ui_result detail::show_mutations_ui_internal( Character &who )
                     scroll_position = std::max( cursor - half_list_view_location, 0 );
                 }
 
-                // Draw the description, shabby workaround
-                examine_id = GetTrait( active, passive, cursor, tab_mode );
+                examine_id = std::nullopt;
 
             } else if( action == "UP" ) {
 
@@ -517,7 +526,7 @@ detail::mutations_ui_result detail::show_mutations_ui_internal( Character &who )
                                                  cursor - half_list_view_location ), 0 );
                 }
 
-                examine_id = GetTrait( active, passive, cursor, tab_mode );
+                examine_id = std::nullopt;
             } else if( action == "NEXT_TAB" || action == "PREV_TAB" ) {
                 if( tab_mode == mutation_tab_mode::active && !passive.empty() ) {
                     tab_mode = mutation_tab_mode::passive;
@@ -526,7 +535,7 @@ detail::mutations_ui_result detail::show_mutations_ui_internal( Character &who )
                 } else {
                     continue;
                 }
-                examine_id = GetTrait( active, passive, cursor, tab_mode );
+                examine_id = std::nullopt;
                 scroll_position = 0;
                 cursor = 0;
             } else if( action == "CONFIRM" ) {
